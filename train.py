@@ -5,7 +5,8 @@ from BigramLanguangeModel import BigramLanguageModel
 
 
 torch.manual_seed(1337)
-
+path_data = "Data/"
+path_input = path_data + "input.txt"
 #hyperparameters
 batch_size = 32 # number indep sequence processed in parallel
 block_size = 8 #maximum context lenght
@@ -17,7 +18,7 @@ eval_iters = 200
 n_embd = 32
 
 #Get text and size
-with open("input.txt", 'r', encoding='utf-8') as f:
+with open(path_input, 'r', encoding='utf-8') as f:
     text = f.read()
 chars = sorted(list(set(text)))
 vocab_size = len(chars)
@@ -71,7 +72,7 @@ for steps in range(max_iters):
 
     if steps%eval_iters == 0: 
         losses = estimate_loss()
-        print("Epoch [{}/{}], losses: [Train: {}, Test: {}".format(steps, max_iters, losses['train'], losses['test']))
+        print("Epoch [{}/{}], losses: [Train: {:.5f}, Test: {:.5f}]".format(steps, max_iters, losses['train'], losses['test']))
     
     # sample a batch of data
     xb, yb = get_batch('train')
