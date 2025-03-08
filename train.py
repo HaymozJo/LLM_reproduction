@@ -1,21 +1,21 @@
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
-from BigramLanguangeModel import BigramLanguageModel
+from NgramLanguangeModel import NgramLanguageModel
+from BigramLanguageModel import BigramLanguageModel
 
 
-torch.manual_seed(1337)
+#hyperparameters
 path_data = "Data/"
 path_input = path_data + "input.txt"
-#hyperparameters
 batch_size = 32 # number indep sequence processed in parallel
 block_size = 8 #maximum context lenght
-max_iters = 10000
+max_iters = 1000
 eval_interval = 200
 learning_rate = 1e-3
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 eval_iters = 200
-n_embd = 32
+Ngram = 2
 
 #Get text and size
 with open(path_input, 'r', encoding='utf-8') as f:
@@ -50,6 +50,8 @@ def get_batch(split):
 
 
 #Instantiate model and attach an adam optimizer to it
+
+#m = NgramLanguageModel(vocab_size, Ngram = Ngram)
 m = BigramLanguageModel(vocab_size)
 m = m.to(device)
 optimizer = torch.optim.AdamW(m.parameters(), lr = learning_rate)
@@ -68,10 +70,13 @@ def estimate_loss():
     m.train()#back to training mode after. 
     return out
 
+train, test = [], []
 for steps in range(max_iters):
-
+    
     if steps%eval_iters == 0: 
         losses = estimate_loss()
+        train.append(losses['train'].item())
+        test.append(losses['test'].item())
         print("Epoch [{}/{}], losses: [Train: {:.5f}, Test: {:.5f}]".format(steps, max_iters, losses['train'], losses['test']))
     
     # sample a batch of data
@@ -87,13 +92,13 @@ for steps in range(max_iters):
 
 
 
-idx = torch.zeros((1, 1), dtype = torch.long, device=device) #== '/n'
+idx = torch.zeros((1, 2), dtype = torch.long, device=device) #== '/n'
 
 max_new_tokens = 300
 pred = m.generate(idx, max_new_tokens)
 
 print(decode(pred[0].tolist()))
-
+print(f"train: {train}, test: {test}")
 
 
 

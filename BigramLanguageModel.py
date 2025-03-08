@@ -11,12 +11,11 @@ class BigramLanguageModel(nn.Module):
         super().__init__()
         # each token directly reads off the logits for the next token from a lookup table
         self.token_embedding_table = nn.Embedding(vocab_size, vocab_size)
-
+        
     def forward(self, idx, targets=None):
 
         # idx and targets are both (B,T) tensor of integers
         logits = self.token_embedding_table(idx) # (B,T,C)
-
         if targets is None:
             loss = None
         else:
@@ -30,7 +29,9 @@ class BigramLanguageModel(nn.Module):
     def generate(self, idx, max_new_tokens):
         # idx is (B, T) array of indices in the current context
         for _ in range(max_new_tokens):
-            # get the predictions
+            # get the predictions 
+            #Note: not efficient for bigram as we predict for the whole idx when it is only needed to predict for the last
+            #      token. Still kept like this to continue a logic of pytorch implementation
             logits, _ = self(idx)
             # focus only on the last time step
             logits = logits[:, -1, :] # becomes (B, C)
@@ -41,5 +42,3 @@ class BigramLanguageModel(nn.Module):
             # append sampled index to the running sequence
             idx = torch.cat((idx, idx_next), dim=1) # (B, T+1)
         return idx
-
-
