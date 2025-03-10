@@ -4,6 +4,7 @@ from torch.nn import functional as F
 from NgramLanguangeModel import NgramLanguageModel
 from BigramLanguageModel import BigramLanguageModel
 from SelfAttention import SelfAttentionModel
+from MultiHeadAttention import MultiHeadAttentionModel
 import os
 import numpy as np
 
@@ -13,15 +14,16 @@ path_input = path_data + "input.txt"
 path_save_model = "Models/"
 batch_size = 32 # number indep sequence processed in parallel
 block_size = 8 #maximum context lenght
-head_size = 8 #if solo keep it = block size, if multi better to blockSize/#heads
+head_size = 8 #if solo keep it = n_embd, if multi better to n_embd/num_heads
+num_heads = 4
 n_embd = 32
-max_iters = 20000
+max_iters = 10000
 eval_interval = 200
 learning_rate = 1e-3
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 eval_iters = 200
 Ngram = 7
-model_choice = 'SelfAttention' #choice of model, bigram  base = "Bigram", ngram = 'Ngram', 1 head = 'SelfAttention
+model_choice = 'MultiHead' #choice of model, bigram  base = "Bigram", ngram = 'Ngram', 1 head = 'SelfAttention
 
 #Get text and size
 with open(path_input, 'r', encoding='utf-8') as f:
@@ -57,12 +59,15 @@ def get_batch(split):
 
 #Instantiate model and attach an adam optimizer to it
 
+
 if model_choice == 'Bigram':
     m = BigramLanguageModel(vocab_size)
 elif model_choice == 'Ngram':
     m = NgramLanguageModel(vocab_size, Ngram = Ngram)
 elif model_choice == 'SelfAttention':
     m = SelfAttentionModel(head_size, block_size, n_embd, vocab_size, device=device)
+elif model_choice == 'MultiHead':
+    m = MultiHeadAttentionModel(num_heads, head_size, block_size, n_embd, vocab_size, device)
 else:
     raise Exception("The model name set is false")
 
