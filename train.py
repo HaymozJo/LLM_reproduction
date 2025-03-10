@@ -13,16 +13,17 @@ path_data = "Data/"
 path_input = path_data + "input.txt"
 path_save_model = "Models/"
 batch_size = 32 # number indep sequence processed in parallel
-block_size = 8 #maximum context lenght
-head_size = 8 #if solo keep it = n_embd, if multi better to n_embd/num_heads
-num_heads = 4
-n_embd = 32
-max_iters = 10000
-eval_interval = 200
-learning_rate = 1e-3
+block_size = 256 #maximum context lenght
+n_layers = 6 # number of layers of "Block" there is for the multiHeadAttention
+num_heads = 6
+n_embd = 384
+max_iters = 5000
+learning_rate = 3e-4
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-eval_iters = 200
+print(device)
+eval_iters = 500
 Ngram = 7
+dropout = 0.2
 model_choice = 'MultiHead' #choice of model, bigram  base = "Bigram", ngram = 'Ngram', 1 head = 'SelfAttention
 
 #Get text and size
@@ -65,9 +66,9 @@ if model_choice == 'Bigram':
 elif model_choice == 'Ngram':
     m = NgramLanguageModel(vocab_size, Ngram = Ngram)
 elif model_choice == 'SelfAttention':
-    m = SelfAttentionModel(head_size, block_size, n_embd, vocab_size, device=device)
+    m = SelfAttentionModel(n_embd, block_size, vocab_size, device=device)
 elif model_choice == 'MultiHead':
-    m = MultiHeadAttentionModel(num_heads, head_size, block_size, n_embd, vocab_size, device)
+    m = MultiHeadAttentionModel(num_heads, block_size, n_embd, vocab_size, n_layers, device, dropout)
 else:
     raise Exception("The model name set is false")
 

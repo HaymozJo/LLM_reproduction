@@ -2,14 +2,14 @@ import torch.nn as nn
 import torch
 from torch.nn import functional as F
 
+#Head for selfAttention with no multihead in sight -> headsize == n_embd
 class Head(nn.Module):
-    def __init__(self, head_size, block_size, n_embd, device):
+    def __init__(self, n_embd, block_size, device):
         super().__init__()
-        self.key = nn.Linear(n_embd, head_size, bias=False)
-        self.query = nn.Linear(n_embd, head_size, bias=False)
-        self.value = nn.Linear(n_embd, head_size, bias=False)
+        self.key = nn.Linear(n_embd, n_embd, bias=False)
+        self.query = nn.Linear(n_embd, n_embd, bias=False)
+        self.value = nn.Linear(n_embd, n_embd, bias=False)
         self.register_buffer('tril',  torch.tril(torch.ones(block_size, block_size, device = device)))
-        self.head_size = head_size #d
         self.block_size = block_size #T
         self.n_embd = n_embd #C
         
@@ -30,15 +30,14 @@ class Head(nn.Module):
     
 
 class SelfAttentionModel(nn.Module):
-    def __init__(self, head_size, block_size, n_embd, vocab_size, device):
+    def __init__(self, n_embd, block_size, vocab_size, device):
         super().__init__()
         #embeddings:
         self.token_embedding = nn.Embedding(vocab_size, n_embd) #(C, C)
         self.positional_embedding = nn.Embedding(block_size, n_embd) #(T, C)
-        self.head = Head(head_size, block_size, n_embd, device= device) # (B, T, C) -> (B, T, C)
+        self.head = Head(n_embd, block_size, device= device) # (B, T, C) -> (B, T, C)
         self.lm_head =nn.Linear(n_embd, vocab_size) # C --> voc_size
         self.device = device
-        self.head_size = head_size #d
         self.block_size = block_size #T
         self.n_embd = n_embd #C
         self.vocab_size = vocab_size #voc_size
