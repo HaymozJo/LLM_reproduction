@@ -3,6 +3,7 @@ import torch.nn as nn
 from torch.nn import functional as F
 from NgramLanguangeModel import NgramLanguageModel
 from BigramLanguageModel import BigramLanguageModel
+from SelfAttention import SelfAttentionModel
 import os
 import numpy as np
 
@@ -12,12 +13,15 @@ path_input = path_data + "input.txt"
 path_save_model = "Models/"
 batch_size = 32 # number indep sequence processed in parallel
 block_size = 8 #maximum context lenght
-max_iters = 10000
+head_size = 8 #if solo keep it = block size, if multi better to blockSize/#heads
+n_embd = 32
+max_iters = 20000
 eval_interval = 200
-learning_rate = 1e-2
+learning_rate = 1e-3
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 eval_iters = 200
 Ngram = 7
+model_choice = 'SelfAttention' #choice of model, bigram  base = "Bigram", ngram = 'Ngram', 1 head = 'SelfAttention
 
 #Get text and size
 with open(path_input, 'r', encoding='utf-8') as f:
@@ -53,8 +57,15 @@ def get_batch(split):
 
 #Instantiate model and attach an adam optimizer to it
 
-m = NgramLanguageModel(vocab_size, Ngram = Ngram)
-#m = BigramLanguageModel(vocab_size)
+if model_choice == 'Bigram':
+    m = BigramLanguageModel(vocab_size)
+elif model_choice == 'Ngram':
+    m = NgramLanguageModel(vocab_size, Ngram = Ngram)
+elif model_choice == 'SelfAttention':
+    m = SelfAttentionModel(head_size, block_size, n_embd, vocab_size, device=device)
+else:
+    raise Exception("The model name set is false")
+
 m = m.to(device)
 optimizer = torch.optim.AdamW(m.parameters(), lr = learning_rate)
 
@@ -94,7 +105,10 @@ idx = torch.zeros((1, 2), dtype = torch.long, device=device) #== '/n'
 max_new_tokens = 300
 pred = m.generate(idx, max_new_tokens)
 
-name = f"Ngram_{Ngram}gram_{max_iters}"
+if model_choice == 'Ngram':
+    name = f"{model_choice}_{Ngram}gram_{max_iters}"
+else:
+    name = f"{model_choice}_MI{max_iters}_lr{learning_rate}"
 path_dir = path_save_model + name 
 os.mkdir(path_dir)
 #Save everything in the models file
