@@ -8,6 +8,11 @@ from MultiHeadAttention import MultiHeadAttentionModel
 import os
 import numpy as np
 
+"""
+Train a given auto-regressive model (easy ones) on a basic 1000 line shakespear txt file.
+Save the model, loss and from-nothing-generated text 
+"""
+
 #hyperparameters
 path_data = "Data/"
 path_input = path_data + "input.txt"
