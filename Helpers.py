@@ -1,5 +1,6 @@
 from datasets import load_dataset, get_dataset_split_names, get_dataset_config_names
 from transformers import BertTokenizer, XLNetTokenizer
+import torch
 #Hyperparameters------------------------------
 iters = 1000 #progress shown every #iters while encoding phrases
 #---------------------------------------------
@@ -45,6 +46,15 @@ class DataLoader():
             ds = load_dataset(path,config) if config_bool else load_dataset(path)
         return ds
     
+
+    def get_batch(self, split, data):
+        ix = torch.randint(len(data) - self.block_size, (self.batch_size,))#generate random offsets, start of our different block sequences
+        x = torch.stack([data[i:i+self.block_size] for i in ix])
+        y = torch.stack([data[i+1:i+self.block_size+1] for i in ix])
+
+        x,y = x.to(self.device), y.to(self.device)
+        return x, y
+
 
 class Encoding():
     def __init__(self, input_tokens = None):

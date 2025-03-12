@@ -1,6 +1,7 @@
 from Helpers import DataLoader, Encoding
 import pandas as pd
 import torch
+import numpy as np
 
 
 """
@@ -30,6 +31,7 @@ df = df[df['language'] == 'en']
 #Keep only relevant information (maybe for future version add the other as context in the encoding)
 df = df[['original_version', 'french_version']]
 
+#*2 to include french and english
 size_df = len(df.index) *2
 #tokenize all the data for our transformers
 #Note: French and Enlgish are relatively similar such that using the same tokenizer for both should work well
@@ -46,6 +48,6 @@ df['target_token'] = df['french_version'].apply(encode)
 #Could add a 'Contextual_token' column to add the song context
 
 #Save the input and target tokens into our path_save
-df_save = df[['input_token', 'target_token']]
-path_save = path_save_dir + encoding + ".csv"
-df_save.to_csv(path_or_buf=path_save, index=False)
+df_save = df[['input_token', 'target_token']].apply(np.array)
+path_save = path_save_dir + encoding + ".parquet"
+df_save.to_parquet(path_save)
