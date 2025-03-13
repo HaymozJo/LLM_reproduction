@@ -40,7 +40,7 @@ class MultiHeadAttention(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, idx):    
-        out = torch.cat([head(idx) for head in self.heads], dim = -1) #h *(B, T, d) 
+        out = torch.cat([head(idx) for head in self.heads], dim = -1) #(B, T, d*n_heads) == (B, T, C) 
         out = self.proj(out) # #projection back into residual pathway
         out = self.dropout(out)
         return out

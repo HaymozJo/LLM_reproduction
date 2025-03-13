@@ -2,17 +2,24 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 import torch
 from torch.nn.utils.rnn import pad_sequence 
-
+from AIAYNModel import AIAYNModel
+from torchsummary import summary
 #Hyperparameters------------------------------
 path_data = "Data/Bert.parquet"
 split = 0.2 
 #device = 'cuda' if torch.cuda.is_available() else 'cpu'
 #print(device)
 encoding = 'Bert' #Choose encoding in ['Bert', 'XLNet', 'Int'] following your preprocessing choice
-vocab_size = 30522  # Size of BERT's vocabulary  --> vocab_size
+vocab_size =  30522   # Size of BERT's vocabulary  --> vocab_size
 block_size = 16 #set at 16 as min input is at 19 --> T
-n_embd = 32 # Change it to the attention paper when finished --> C
+n_embd = 60 # Change it to the attention paper when finished --> C
 batch_size = 32 #number of batches dealt at the same time --> B
+n_head = 6 #numbers of heads processed in parallel in a multihead block --> n_head or h
+n_layer = 3 # number of repeated block one after the other (6 in paper ) --> n_layer
+
+#Estimate:
+eval_iters = 500
+max_eval_iters = 5000
 #---------------------------------------------
 
 df = pd.read_parquet(path_data)
@@ -50,7 +57,7 @@ def get_batch(train = True, device = 'cpu'):
         #Random start idx within the text, ensure that we have enough size T for it
         #In case we do not have the same number in tokens in each language, we use min
         max_start = min(len(in_seq), len(trgt_seq)) - block_size - 1
-        start = torch.randint(0, max_start, (1,)).item()
+        start = torch.randint(0, max_start, (1,))
 
         #We get the encoder's input, decoder's input and decoder's target (B, T)
         enc_in = in_seq[start: start + block_size]
@@ -61,12 +68,28 @@ def get_batch(train = True, device = 'cpu'):
         decoder_inputs.append(dec_in)
         decoder_trgts.append(dec_trgt)
     
-    encoder_in = torch.stack(encoder_inputs).unsqueeze(-1) #(B,T,1)
-    decoder_in = torch.stack(decoder_inputs).unsqueeze(-1) #(B,T,1)
-    decoder_trgt = torch.stack(decoder_trgts).unsqueeze(-1) #(B,T,1)
-    return (encoder_in.to(device).float(), 
-            decoder_in.to(device).float(),
-            decoder_trgt.to(device).float())
+    encoder_in = torch.stack(encoder_inputs) #(B,T)
+    decoder_in = torch.stack(decoder_inputs) #(B,T)
+    decoder_trgt = torch.stack(decoder_trgts) #(B,T)
+    return encoder_in.to(device), decoder_in.to(device), decoder_trgt.to(device)
+            
+            
+@torch.no_grad()  # Disable gradients
+def estimate_loss():
+    out = {}
+    m.eval() #explain which mode we are in. good practice, not useful here
+    for train in [True, False]:
+        losses = torch.zeros(eval_iters)
+        for k in range(eval_iters):
+            X, Y = get_batch(train)
+            _, loss = m(X,Y)
+            losses[k] = loss.item()
+        out[split] = losses.mean()
+    m.train()#back to training mode after. 
+    return out
 
 encoder_in, decoder_in, decoder_trgt = get_batch(train_input_sequences)
 print(f"shapes are: enc_in {encoder_in.shape}, dec_in {decoder_in.shape}, dec_trgt {decoder_trgt.shape}")
+
+m = AIAYNModel(n_embd, vocab_size, block_size, n_head, n_layer)
+summary(m, encoder_in.shape)
