@@ -20,7 +20,7 @@ n_layer = 3 # number of repeated block one after the other (6 in paper ) --> n_l
 #Estimate and generate
 eval_iters = 500
 max_eval_iters = 5000
-max_tokens = 300
+max_tokens = 9000
 #---------------------------------------------
 
 df = pd.read_parquet(path_data)
@@ -38,7 +38,10 @@ train_target_sequences = [torch.tensor(row['target_token'], dtype = torch.int) f
 test_input_sequences = [torch.tensor(row['input_token'], dtype = torch.int) for _, row in test_df.iterrows()]
 test_target_sequences = [torch.tensor(row['target_token'], dtype = torch.int) for _, row in test_df.iterrows()]
 
-
+print(df["input_token"].str.len().max())
+print(df["input_token"].str.len().min())
+print(df["target_token"].str.len().max())
+print(df["target_token"].str.len().min())
 #We get lists of tensors for each input/target tokens. the tensors size change depending on the input/target as
 #all songs do not have zthe same length
 
@@ -96,4 +99,4 @@ print(f"shapes are: enc_in {encoder_in.shape}, dec_trgt {decoder_trgt.shape}")
 
 m = AIAYNModel(n_embd, vocab_size, block_size, n_head, n_layer)
 
-random_gen = m.generate(encoder_in)
+random_gen = m.generate(encoder_in, max_token= max_tokens)

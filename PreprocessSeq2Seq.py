@@ -2,6 +2,7 @@ from Helpers import DataLoader, Encoding
 import pandas as pd
 import torch
 import numpy as np
+import re
 
 
 """
@@ -31,8 +32,35 @@ df = df[df['language'] == 'en']
 #Keep only relevant information (maybe for future version add the other as context in the encoding)
 df = df[['original_version', 'french_version']]
 
-#*2 to include french and english
-size_df = len(df.index) *2
+#See exploration to understant the split:
+#Note, I took out the count as it was only for a exploration idea
+def split_string(str):
+    sep_added = re.sub(r'([a-zàâäæáãåāèéêëęėēîïīįíìôōøõóòöœùûüūúÿç])([A-ZÀÂÄÆÁÃÅĀÈÉÊËĘĖĒÎÏĪĮÍÌÔŌØÕÓÒÖŒÙÛÜŪÚŸÇ])', r'\1\n\2', str)
+    lines = sep_added.split(sep = '\n')
+    lines = [s for s in lines if len(s) >= 10]
+    return lines
+
+def split_both(list_origin, list_french, origin, french):
+    lines_origin = split_string(origin)
+    lines_french = split_string(french)
+    if len(lines_origin)==len(lines_french):
+        for i in range(len(lines_origin)):
+            list_origin.append(lines_origin[i])
+            list_french.append(lines_french[i])
+    return list_origin, list_french
+
+list_origin, list_french = [], []
+
+for origin, french in zip(df["original_version"], df["french_version"]):
+    list_origin, list_french = split_both(list_origin, list_french, origin, french)
+
+#create new df from the lists:
+df_split = pd.DataFrame(list(zip(list_origin, list_french)), 
+                      columns=["original_version", "french_version"])
+
+print(df_split.info())
+#*2 to include french and english~~
+size_df = len(df_split.index) *2
 #tokenize all the data for our transformers
 #Note: French and Enlgish are relatively similar such that using the same tokenizer for both should work well
 
@@ -42,9 +70,9 @@ elif encoding == 'XLNet':
     encode, decode = Encoding().XLNetToken(size_df, progress)
 
 print("------------English-----------------")
-df['input_token'] = df['original_version'].apply(encode)
+df['input_token'] = df_split['original_version'].apply(encode)
 print("------------French------------------")
-df['target_token'] = df['french_version'].apply(encode)
+df['target_token'] = df_split['french_version'].apply(encode)
 #Could add a 'Contextual_token' column to add the song context
 
 #Save the input and target tokens into our path_save
