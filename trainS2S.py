@@ -3,7 +3,7 @@ from sklearn.model_selection import train_test_split
 import torch
 from torch.nn.utils.rnn import pad_sequence 
 from AIAYNModel import AIAYNModel
-from torchsummary import summary
+from torchinfo import summary
 #Hyperparameters------------------------------
 path_data = "Data/Bert.parquet"
 split = 0.2 
@@ -17,9 +17,10 @@ batch_size = 32 #number of batches dealt at the same time --> B
 n_head = 6 #numbers of heads processed in parallel in a multihead block --> n_head or h
 n_layer = 3 # number of repeated block one after the other (6 in paper ) --> n_layer
 
-#Estimate:
+#Estimate and generate
 eval_iters = 500
 max_eval_iters = 5000
+max_tokens = 300
 #---------------------------------------------
 
 df = pd.read_parquet(path_data)
@@ -47,10 +48,15 @@ def get_batch(train = True, device = 'cpu'):
     target_sequences = train_target_sequences if train else test_target_sequences
 
     text_indices = torch.randint(len(inputs_sequences), (batch_size,)) #B rows selected randomly
-    encoder_inputs, decoder_inputs, decoder_trgts = [], [], []
+    encoder_inputs, decoder_trgts = [], []
     for idx in text_indices:
         in_seq = inputs_sequences[idx]
         trgt_seq = target_sequences[idx]
+        """
+        # Ensure sequences are long enough
+        if len(in_seq) <= block_size or len(trgt_seq) <= block_size:
+            continue  # Skip short sequences instead of raising an error"
+        """
         #Check our input sequences make sense, otherwise we may have to kick them 
         if len(in_seq) <= block_size or len(trgt_seq) <= block_size:
             raise ValueError(f"Sequence too short. Input: {len(in_seq)}, Target: {len(trgt_seq)}")
@@ -61,17 +67,14 @@ def get_batch(train = True, device = 'cpu'):
 
         #We get the encoder's input, decoder's input and decoder's target (B, T)
         enc_in = in_seq[start: start + block_size]
-        dec_in = trgt_seq[start : start + block_size]
-        dec_trgt = trgt_seq[start + 1 : start + block_size + 1]
+        dec_trgt = trgt_seq[start : start + block_size]
         #Need padding + masks!!
         encoder_inputs.append(enc_in)
-        decoder_inputs.append(dec_in)
         decoder_trgts.append(dec_trgt)
     
     encoder_in = torch.stack(encoder_inputs) #(B,T)
-    decoder_in = torch.stack(decoder_inputs) #(B,T)
     decoder_trgt = torch.stack(decoder_trgts) #(B,T)
-    return encoder_in.to(device), decoder_in.to(device), decoder_trgt.to(device)
+    return encoder_in.to(device), decoder_trgt.to(device)
             
             
 @torch.no_grad()  # Disable gradients
@@ -88,8 +91,9 @@ def estimate_loss():
     m.train()#back to training mode after. 
     return out
 
-encoder_in, decoder_in, decoder_trgt = get_batch(train_input_sequences)
-print(f"shapes are: enc_in {encoder_in.shape}, dec_in {decoder_in.shape}, dec_trgt {decoder_trgt.shape}")
+encoder_in, decoder_trgt = get_batch(train_input_sequences)
+print(f"shapes are: enc_in {encoder_in.shape}, dec_trgt {decoder_trgt.shape}")
 
 m = AIAYNModel(n_embd, vocab_size, block_size, n_head, n_layer)
-summary(m, encoder_in.shape)
+
+random_gen = m.generate(encoder_in)

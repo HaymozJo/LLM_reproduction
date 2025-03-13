@@ -7,11 +7,9 @@ class Head(nn.Module):
     def __init__(self, mask, head_size, block_size, n_embd, device, cross = False):
         super().__init__()
         self.Query = nn.Linear(n_embd, head_size) #We get the linear projections to the head_size
-        if cross:
-            pass
-        else:
-            self.Key = nn.Linear(n_embd, head_size)
-            self.Value = nn.Linear(n_embd, head_size)
+
+        self.Key = nn.Linear(n_embd, head_size)
+        self.Value = nn.Linear(n_embd, head_size)
 
         self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size, device = device))) # (T, T)
 
@@ -19,14 +17,21 @@ class Head(nn.Module):
         self.cross = cross
 
         self.head_size = head_size
-        
+    
 
+    """
+    param:
+        * idx : (B, T, C)
+        * K_encod: (B, T, d)
+        * V_encod: (B, T, d)
+    
+    """
     def forward(self, idx, K_encod = None, V_encod = None):
         _, T, _ = idx.shape
         Q = self.Query(idx) #All (B, T, d)
         if self.cross:
-            K = K_encod #Tensors from the final layer of encoder
-            V = V_encod
+            K = self.Key(K_encod) #Tensors from the final layer of encoder, projected into the correct value
+            V = self.Value(V_encod)
         else:
             K = self.Key(idx)
             V = self.Value(idx)
@@ -91,7 +96,7 @@ class DecodeBlock(nn.Module):
         #first one with masking
         self.multiHeadsMasked = nn.ModuleList(Head(True, head_size, block_size, n_embd, device=device) for _ in range(num_heads))
         #Second one with the input of K,V
-        self.multiHeadsCross =  nn.ModuleList(Head(True, head_size, block_size, n_embd, cross=True, device=device) for _ in range(num_heads)) 
+        self.multiHeadsCross =  nn.ModuleList(Head(False, head_size, block_size, n_embd, cross=True, device=device) for _ in range(num_heads)) 
         #The projections, one and two after multiheads, las proj (last_proj) at the end
         self.proj1 = nn.Linear(n_embd, n_embd)
         self.proj2 = nn.Linear(n_embd, n_embd)
@@ -104,7 +109,7 @@ class DecodeBlock(nn.Module):
 
     def forward(self, idx, K_enc, V_enc):
         heads_output  = [h(idx) for h in self.multiHeadsMasked]
-        out = torch.concat([h[0] for h in heads_output], dim = -1) #In the decoder we don't care about it's K and V
+        out = torch.cat([h[0] for h in heads_output], dim = -1) #In the decoder we don't care about it's K and V
         out = self.proj1(out)
         out1 = self.ln1(idx + out) #We keep the out1 info for futre residual path
         
@@ -134,50 +139,72 @@ class AIAYNModel(nn.Module):
         self.block_size = block_size #T
         self.device = device
 
+    """
+    Param:
+        * src: (B, T, C) 
+    """ 
     def _encoder_forward(self, src):
+        
         token_embd = self.encode_embedding(src) #(B, T, C)
-        pos_embd = self.positional_embedding(torch.arange(src.size(1), device=self.device)) # (T, C)
+        # Create position indices and clamp them to block_size - 1
+        positions = torch.arange(src.size(1), device=self.device)
+        positions = torch.clamp(positions, max=self.block_size - 1)
+        pos_embd = self.positional_embedding(positions) # (T, C)
         
         x_enc = token_embd + pos_embd #(B, T, C)
                 # Process through encoder blocks
         encoder_K = None
         encoder_V = None
-        for block in self.Encodeblocks:
+        for block in self.EncodeBlocks:
             x_enc, K, V = block(x_enc)
             encoder_K = K  # We'll use the K from the last encoder block
             encoder_V = V  # We'll use the V from the last encoder block
 
         return x_enc, encoder_K, encoder_V
-
+    
+    """
+    param:
+        * x_dec : (B, T', voc_size)
+        * K_encod, V_encod: (B, T, C)
+    """
     def _decoder_forward(self, x_dec, K_encod, V_encod):
         
         token_embd = self.decode_embedding(x_dec)
-        pos_embd = self.positional_embedding(torch.arange(x_dec.size(1), device=self.device))
+
+        # Create position indices and clamp them to block_size - 1
+        positions = torch.arange(x_dec.size(1), device=self.device)
+        positions = torch.clamp(positions, max=self.block_size - 1)
+
+        pos_embd = self.positional_embedding(positions)
         x_dec = token_embd + pos_embd
 
         for block in self.DecodeBlocks:
-            out = block(x_dec, K_encod, V_encod)
+            x_dec = block(x_dec, K_encod, V_encod)
 
-        return self.lm_head(out)
+        return self.lm_head(x_dec)
     
+    """
+    params:
+        *src : (B, T', C)?
+    """
     def forward(self, src, tgt = None):
-        B, T, _ = src.shape
+        B, _ = src.shape
         _, K_encod, V_encod = self._encoder_forward(src)
         #Case we have the targets, we want to get the logits and the loss to evaluate the model
         if tgt is not None:
-            out_dec = self._decoder_forward(tgt, K_encod, V_encod)
+            B, T_tgt = tgt.shape
+            logits = self._decoder_forward(tgt, K_encod, V_encod)
             #calculate loss
-            loss = None
-            logits = logits.reshape(B*T, -1) # (B*T, voc_size)
-            tgt = tgt.view(B*T)
-            loss = F.cross_entropy(logits, tgt)
+            logits_loss = logits.reshape(B*T_tgt, -1) # (B*T, voc_size)
+            tgt = tgt.view(B*T_tgt)
+            loss = F.cross_entropy(logits_loss, tgt)
         
         #Case we do not have the targets, we want to generate the code
         else:
-            out_dec = self.generate(src, K_encod, V_encod)
+            logits = self.generate(src, K_encod, V_encod)
             loss = None
 
-        return out_dec, loss
+        return logits, loss
     
     def generate(self, src, K_encod = None, V_encod = None, max_token = 100):
         #If no K or V, generate new ones (Normally won't happen)
