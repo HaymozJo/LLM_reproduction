@@ -16,6 +16,7 @@ split = 0.9
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(device)
 vocab_size = 30522  # Size of BERT's vocabulary
+block_size = 32
 path_save_dir = "Data/" #save path for the dataframe with input tokens and target tokens
 encoding = 'Bert' #Choose encoding in ['Bert', 'XLNet', 'Int']
 progress = True #show progress while encoding
@@ -59,6 +60,7 @@ df_split = pd.DataFrame(list(zip(list_origin, list_french)),
                       columns=["original_version", "french_version"])
 
 print(df_split.info())
+
 #*2 to include french and english~~
 size_df = len(df_split.index) *2
 #tokenize all the data for our transformers
@@ -70,12 +72,17 @@ elif encoding == 'XLNet':
     encode, decode = Encoding().XLNetToken(size_df, progress)
 
 print("------------English-----------------")
-df['input_token'] = df_split['original_version'].apply(encode)
+df_split['input_token'] = df_split['original_version'].apply(encode)
 print("------------French------------------")
-df['target_token'] = df_split['french_version'].apply(encode)
+df_split['target_token'] = df_split['french_version'].apply(encode)
 #Could add a 'Contextual_token' column to add the song context
 
+#take out the lines with too much token (outliers):
+
+df_split = df_split[(df_split["input_token"].str.len() <=32)
+                     & (df_split["target_token"].str.len()<=32)]
+print(df_split.info())
 #Save the input and target tokens into our path_save
-df_save = df[['input_token', 'target_token']].apply(np.array)
+df_save = df_split[['input_token', 'target_token']].apply(np.array)
 path_save = path_save_dir + encoding + ".parquet"
 df_save.to_parquet(path_save)
