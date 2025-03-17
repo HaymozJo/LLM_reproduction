@@ -18,7 +18,7 @@ print(device)
 vocab_size = 30522  # Size of BERT's vocabulary
 block_size = 32
 path_save_dir = "Data/" #save path for the dataframe with input tokens and target tokens
-encoding = 'Bert' #Choose encoding in ['Bert', 'XLNet', 'Int']
+encoding_choice = 'Bert' #Choose encoding in ['Bert', 'XLNet', 'Int']
 progress = True #show progress while encoding
 #---------------------------------------------
 dl = DataLoader()
@@ -65,11 +65,11 @@ print(df_split.info())
 size_df = len(df_split.index) *2
 #tokenize all the data for our transformers
 #Note: French and Enlgish are relatively similar such that using the same tokenizer for both should work well
-
-if encoding == 'Bert':
-    encode, decode = Encoding().BertToken(size_df, progress)
-elif encoding == 'XLNet':
-    encode, decode = Encoding().XLNetToken(size_df, progress)
+encoding = Encoding()
+if encoding_choice == 'Bert':
+    encode, decode = encoding.BertToken(size_df, progress)
+elif encoding_choice == 'XLNet':
+    encode, decode = encoding.XLNetToken(size_df, progress)
 
 print("------------English-----------------")
 df_split['input_token'] = df_split['original_version'].apply(encode)
@@ -78,11 +78,16 @@ df_split['target_token'] = df_split['french_version'].apply(encode)
 #Could add a 'Contextual_token' column to add the song context
 
 #take out the lines with too much token (outliers):
-
 df_split = df_split[(df_split["input_token"].str.len() <=32)
                      & (df_split["target_token"].str.len()<=32)]
+#add padding
+print("------------English-----------------")
+df_split['input_token'] = df_split['input_token'].apply(lambda toks: encoding.add_padding(toks, block_size ))
+print("------------French------------------")
+df_split['target_token'] = df_split['target_token'].apply(lambda toks: encoding.add_padding(toks, block_size))
+
 print(df_split.info())
 #Save the input and target tokens into our path_save
 df_save = df_split[['input_token', 'target_token']].apply(np.array)
-path_save = path_save_dir + encoding + ".parquet"
+path_save = path_save_dir + encoding_choice + ".parquet"
 df_save.to_parquet(path_save)

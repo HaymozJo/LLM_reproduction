@@ -11,7 +11,7 @@ split = 0.2
 #print(device)
 encoding = 'Bert' #Choose encoding in ['Bert', 'XLNet', 'Int'] following your preprocessing choice
 vocab_size =  30522   # Size of BERT's vocabulary  --> vocab_size
-block_size = 16 #set at 16 as min input is at 19 --> T
+block_size = 32 #Set at 16 given the information 
 n_embd = 60 # Change it to the attention paper when finished --> C
 batch_size = 32 #number of batches dealt at the same time --> B
 n_head = 6 #numbers of heads processed in parallel in a multihead block --> n_head or h
@@ -29,6 +29,8 @@ df = pd.read_parquet(path_data)
 #Note: Padding? Trimming?
 if df["input_token"].str.len().min() <= block_size:
     raise OverflowError("Block size is too big and all the samples will not fit")
+
+#separate by li
 
 train_df, test_df = train_test_split(df, test_size=split)
 #get batch function 

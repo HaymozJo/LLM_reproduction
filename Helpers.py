@@ -60,27 +60,36 @@ class Encoding():
 
     def BertToken(self, size_df, progress = True):
         tokenizer = BertTokenizer.from_pretrained("google-bert/bert-base-uncased")
-        encode = lambda s: self.encodeWprogress(tokenizer, s, size_df, progress)
-        decode = lambda tokens:self.decodeWProgress(tokenizer, tokens, size_df, progress)
+        self.tokenizer = tokenizer
+        encode = lambda s: self.encodeWprogress(s, size_df, progress)
+        decode = lambda tokens:self.decodeWProgress(tokens, size_df, progress)
         return encode, decode
     
     #Note: need SentencePiece library
     #Include a '_' character before every space to ensure a better understanding in case of non-expected token
     def XLNetToken(self, size_df, progress = True):
         tokenizer = XLNetTokenizer.from_pretrained("xlnet/xlnet-base-cased")
-        encode = lambda s: self.encodeWprogress(tokenizer, s, size_df, progress)
-        decode = lambda tokens:self.decodeWProgress(tokenizer, tokens, size_df, progress)
+        self.tokenizer = tokenizer
+        encode = lambda s: self.encodeWprogress(s, size_df, progress)
+        decode = lambda tokens:self.decodeWProgress(tokens, size_df, progress)
         return encode, decode
 
     #Encode/decode and show advancement of the process
-    def encodeWprogress(self, tokenizer, s, total, progress):
+    def encodeWprogress(self, s, total, progress):
         if (self.status%1000 ==0) & (progress):
             print(f"status: {self.status}/{total}", end = "\r", flush=True)
         self.status +=1
-        return tokenizer.convert_tokens_to_ids(tokenizer.tokenize(s))
+        return self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(s))
     
-    def decodeWProgress(self, tokenizer, tok, total, progress):
+    def decodeWProgress(self, tok, total, progress):
         if (self.status%1000 ==0) & (progress):
             print(f"status: {self.status}/{total}")
         self.status += 1
-        return  tokenizer.convert_tokens_to_string(tokenizer.convert_ids_to_tokens(tok))
+        return  self.tokenizer.convert_tokens_to_string(self.tokenizer.convert_ids_to_tokens(tok))
+    
+    def add_padding(self, tokens, block_size):
+        
+        pad_token_id = self.tokenizer.pad_token_id
+        # If sequence is shorter, pad with pad_token_id
+        padding = [pad_token_id] * (block_size - len(tokens))
+        return tokens + padding  # Right padding (default for BERT)
