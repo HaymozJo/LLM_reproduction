@@ -193,11 +193,28 @@ class AIAYNModel(nn.Module):
         #Case we have the targets, we want to get the logits and the loss to evaluate the model
         if tgt is not None:
             B, T_tgt = tgt.shape
-            logits = self._decoder_forward(tgt, K_encod, V_encod)
-            #calculate loss
-            logits_loss = logits.reshape(B*T_tgt, -1) # (B*T, voc_size)
-            tgt = tgt.view(B*T_tgt)
-            loss = F.cross_entropy(logits_loss, tgt)
+            # Add BOS token to decoder input
+            BOS_TOKEN_ID = 100  # Same as in generate method
+            decoder_input = torch.cat([
+                torch.full((B, 1), BOS_TOKEN_ID, dtype=tgt.dtype, device=tgt.device),
+                tgt[:, :-1]  # Remove last token for teacher forcing
+            ], dim=1)
+            
+            # Get logits for the sequence
+            logits = self._decoder_forward(decoder_input, K_encod, V_encod)
+            
+            # Reshape for loss calculation
+            # We want to predict the next token at each position
+            # So we remove the last position from logits and first position from targets
+            logits = logits[:, :-1, :].reshape(-1, self.voc_size)  # (B*(T-1), vocab_size)
+            targets = tgt[:, 1:].reshape(-1).long()  # Convert to Long type for cross-entropy
+            
+            # Validate shapes
+            if logits.size(0) != targets.size(0):
+                raise ValueError(f"Shape mismatch: logits {logits.shape}, targets {targets.shape}")
+            
+            # Calculate loss
+            loss = F.cross_entropy(logits, targets)
         
         #Case we do not have the targets, we want to generate the code
         else:

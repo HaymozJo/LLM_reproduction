@@ -23,6 +23,9 @@ max_iters = 5000  # Total number of training iterations
 eval_iters = 500
 max_eval_iters = 5000
 max_tokens = 9000
+
+#Saving parameters
+path_save_model = "Models/"
 #---------------------------------------------
 
 df = pd.read_parquet(path_data)
@@ -77,18 +80,19 @@ def estimate_loss():
     for split in ['train', 'test']:
         losses = torch.zeros(eval_iters)
         for k in range(eval_iters):
-            X, Y = get_batch(train=(split == 'train'))
+            X, Y = get_batch(train=(split == 'train'), device=device)
             _, loss = m(X,Y)
             losses[k] = loss.item()
         out[split] = losses.mean()
     m.train()#back to training mode after. 
     return out
 
-encoder_in, decoder_trgt = get_batch()
+encoder_in, decoder_trgt = get_batch(device=device)
 print(f"shapes are: enc_in {encoder_in.shape}, dec_trgt {decoder_trgt.shape}")
 
 # Initialize model and optimizer
 m = AIAYNModel(n_embd, vocab_size, block_size, n_head, n_layer, device=device)
+m = m.to(device)  # Move model to device
 optimizer = torch.optim.AdamW(m.parameters(), lr=learning_rate)
 
 train_losses, test_losses = [], []
@@ -108,3 +112,12 @@ for steps in range(max_iters):
     optimizer.zero_grad(set_to_none=True)
     loss.backward()
     optimizer.step()
+
+#Save model
+path_dir = path_save_model + f"AIAYN_MI{max_iters}_lr{learning_rate}"
+os.mkdir(path_dir)
+#Save everything in the models file
+path = path_dir + "/" + name + ".pt"
+torch.save(m, path)
+array = np.array([train, test])
+np.savetxt(path_dir + "/" + name + "losses.csv", array, delimiter=",")
