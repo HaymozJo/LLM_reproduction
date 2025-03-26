@@ -1,9 +1,11 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split
 import torch
+import os
 from torch.nn.utils.rnn import pad_sequence 
 from AIAYNModel import AIAYNModel
 from torchinfo import summary
+import numpy as np
 #Hyperparameters------------------------------
 path_data = "Data/Bert.parquet"
 split = 0.2 
@@ -12,14 +14,16 @@ print(f"Using device: {device}")
 encoding = 'Bert' #Choose encoding in ['Bert', 'XLNet', 'Int'] following your preprocessing choice
 vocab_size =  30522   # Size of BERT's vocabulary  --> vocab_size
 block_size = 32 #Set at 32 given the exploration notebook
-n_embd = 60 # Change it to the attention paper when finished --> C
+n_embd = 252 # number of embeddings, must be divisible by n_head (6 * 42) --> C
 batch_size = 32 #number of batches dealt at the same time --> B
 n_head = 6 #numbers of heads processed in parallel in a multihead block --> n_head or h
-n_layer = 3 # number of repeated block one after the other (6 in paper ) --> n_layer
+n_layer = 6 # number of repeated block one after the other (6 in paper ) --> n_layer
 
 #Training parameters
-learning_rate = 3e-4
-max_iters = 5000  # Total number of training iterations
+learning_rate = 1e-4  # Reduced from 3e-4
+weight_decay = 0.01  # Added weight decay
+warmup_steps = 1000  # Number of warmup steps
+max_iters = 10000  # Total number of training iterations
 eval_iters = 500
 max_eval_iters = 5000
 max_tokens = 9000
@@ -93,16 +97,28 @@ print(f"shapes are: enc_in {encoder_in.shape}, dec_trgt {decoder_trgt.shape}")
 # Initialize model and optimizer
 m = AIAYNModel(n_embd, vocab_size, block_size, n_head, n_layer, device=device)
 m = m.to(device)  # Move model to device
-optimizer = torch.optim.AdamW(m.parameters(), lr=learning_rate)
+
+# Initialize optimizer with weight decay
+optimizer = torch.optim.AdamW(m.parameters(), lr=learning_rate, weight_decay=weight_decay)
+
+# Learning rate scheduler with warmup
+def get_lr(step):
+    if step < warmup_steps:
+        return learning_rate * (step / warmup_steps)
+    return learning_rate
 
 train_losses, test_losses = [], []
 for steps in range(max_iters):
+    # Update learning rate
+    lr = get_lr(steps)
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
     
     if steps % eval_iters == 0: 
         losses = estimate_loss()
         train_losses.append(losses['train'].item())
         test_losses.append(losses['test'].item())
-        print(f"Step [{steps}/{max_iters}], losses: [Train: {losses['train']:.5f}, Test: {losses['test']:.5f}]")
+        print(f"Step [{steps}/{max_iters}], lr: {lr:.2e}, losses: [Train: {losses['train']:.5f}, Test: {losses['test']:.5f}]")
     
     # sample a batch of data
     xb, yb = get_batch(train=True, device=device)
@@ -111,13 +127,17 @@ for steps in range(max_iters):
     logits, loss = m(xb, yb)
     optimizer.zero_grad(set_to_none=True)
     loss.backward()
+    # Gradient clipping
+    torch.nn.utils.clip_grad_norm_(m.parameters(), max_norm=1.0)
     optimizer.step()
 
 #Save model
-path_dir = path_save_model + f"AIAYN_MI{max_iters}_lr{learning_rate}"
+name = f"{encoding}_MI{max_iters}_lr{learning_rate}_wd{weight_decay}"
+path_dir = path_save_model + name
 os.mkdir(path_dir)
 #Save everything in the models file
-path = path_dir + "/" + name + ".pt"
+path = path_save_model + "/" + name + ".pt"
 torch.save(m, path)
-array = np.array([train, test])
+#store losses
+array = np.array([train_losses, test_losses])
 np.savetxt(path_dir + "/" + name + "losses.csv", array, delimiter=",")

@@ -48,15 +48,16 @@ class Head(nn.Module):
 
 
 class FeedForward(nn.Module):
-    def __init__(self, n_embd):
+    def __init__(self, n_embd, dropout=0.1):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(n_embd, n_embd *4), #as in the paper, multiplied by 4
-            nn.ReLU(),
-            nn.Linear(4*n_embd, n_embd)
+            nn.GELU(),  # Changed from ReLU to GELU as in BERT
+            nn.Dropout(dropout),
+            nn.Linear(4*n_embd, n_embd),
+            nn.Dropout(dropout)
         )
         self.ln = nn.LayerNorm(n_embd)
-
 
     def forward(self, idx):
         out = self.net(idx)
@@ -64,13 +65,14 @@ class FeedForward(nn.Module):
         return out
     
 class EncodeBlock(nn.Module):
-    def __init__(self, block_size, n_embd, num_heads, device = 'cpu' ):
+    def __init__(self, block_size, n_embd, num_heads, device = 'cpu', dropout=0.2):
         super().__init__()
         head_size = n_embd//num_heads
         #Our list of heads 
         self.multiHeads = nn.ModuleList(Head(False, head_size, block_size, n_embd, device=device) for _ in range(num_heads))
         self.proj = nn.Linear(n_embd, n_embd)
-        self.ffwd = FeedForward(n_embd)
+        self.dropout = nn.Dropout(dropout)
+        self.ffwd = FeedForward(n_embd, dropout)
         self.ln1 = nn.LayerNorm(n_embd)
         self.ln2 = nn.LayerNorm(n_embd)
 
@@ -81,15 +83,16 @@ class EncodeBlock(nn.Module):
         out = torch.cat([h[0] for h in head_outputs], dim=-1) #(B, T, C)
         K = torch.cat([h[1] for h in head_outputs], dim=-1)
         V = torch.cat([h[2] for h in head_outputs], dim=-1)
-        out = self.proj(out) 
+        out = self.proj(out)
+        out = self.dropout(out)  # Add dropout after projection
         out1 = self.ln1(x + out) #kind of a checkpoint for residual path
         out = self.ffwd(out1)
         out = self.ln2(out1 + out) 
-        return out, K, V 
+        return out, K, V
 
 
 class DecodeBlock(nn.Module):
-    def __init__(self, block_size, n_embd, num_heads, device = 'cpu' ):
+    def __init__(self, block_size, n_embd, num_heads, device = 'cpu', dropout=0.2):
         super().__init__()
         head_size = n_embd//num_heads
         #Our list of heads 
@@ -100,8 +103,10 @@ class DecodeBlock(nn.Module):
         #The projections, one and two after multiheads, las proj (last_proj) at the end
         self.proj1 = nn.Linear(n_embd, n_embd)
         self.proj2 = nn.Linear(n_embd, n_embd)
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
         #Feed-Forward neural network
-        self.ffwd = FeedForward(n_embd)
+        self.ffwd = FeedForward(n_embd, dropout)
         #The 3 layerNorms
         self.ln1 = nn.LayerNorm(n_embd)
         self.ln2 = nn.LayerNorm(n_embd)
@@ -111,11 +116,13 @@ class DecodeBlock(nn.Module):
         heads_output  = [h(idx) for h in self.multiHeadsMasked]
         out = torch.cat([h[0] for h in heads_output], dim = -1) #In the decoder we don't care about it's K and V
         out = self.proj1(out)
+        out = self.dropout1(out)
         out1 = self.ln1(idx + out) #We keep the out1 info for futre residual path
         
         crossHeads_output = [h(out1, K_enc, V_enc) for h in self.multiHeadsCross]
         out_cross = torch.cat([h[0] for h in crossHeads_output], dim = -1)
         out = self.proj2(out_cross)
+        out = self.dropout2(out)
         out2 = self.ln2(out1 + out)
 
         out = self.ffwd(out2)
