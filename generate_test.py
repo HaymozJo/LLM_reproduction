@@ -9,7 +9,7 @@ import numpy as np
 from Helpers import Encoding
 
 # Load the trained model
-model_path = "Models/Bert_MI5000_lr0.0003.pt"
+model_path = "Models/Bert_MI10000_lr0.0001_wd0.01/Bert_MI10000_lr0.0001_wd0.01.pt"
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f"Using device: {device}")
 
@@ -37,6 +37,15 @@ def prepare_input(text):
     # Convert to tensor and move to device
     return torch.tensor(tokens, dtype=torch.long, device=device).unsqueeze(0)  # Add batch dimension
 
+def process_output(generated_tokens):
+    # Remove BOS token and everything after EOS token
+    tokens = generated_tokens.tolist()
+    if model.EOS_TOKEN_ID in tokens:
+        tokens = tokens[:tokens.index(model.EOS_TOKEN_ID)]
+    if model.BOS_TOKEN_ID in tokens:
+        tokens = tokens[tokens.index(model.BOS_TOKEN_ID)+1:]
+    return tokens
+
 # Example usage
 if __name__ == "__main__":
     # Example input text
@@ -45,11 +54,27 @@ if __name__ == "__main__":
     # Prepare input
     input_ids = prepare_input(test_text)
     
-    # Generate translation
-    generated = model.generate(input_ids, max_token=32)  # Changed to match block_size
+    # Generate translation with improved parameters
+    generated = model.generate(
+        input_ids, 
+        max_token=32,
+        temperature=0.7,  # Controls randomness (lower = more deterministic)
+        top_k=50  # Only consider top 50 tokens at each step
+    )
     
-    # Decode the generated sequence
-    generated_text = decode(generated[0].tolist())
+    # Process and decode the generated sequence
+    processed_tokens = process_output(generated[0])
+    generated_text = decode(processed_tokens)
+    
     print(f"Input: {test_text}")
     print(f"Generated: {generated_text}")
+    
+    # Try different temperatures for comparison
+    temperatures = [0.5, 0.7, 1.0]
+    print("\nGenerations with different temperatures:")
+    for temp in temperatures:
+        generated = model.generate(input_ids, max_token=32, temperature=temp, top_k=50)
+        processed_tokens = process_output(generated[0])
+        generated_text = decode(processed_tokens)
+        print(f"Temperature {temp}: {generated_text}")
 

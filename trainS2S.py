@@ -23,10 +23,8 @@ n_layer = 6 # number of repeated block one after the other (6 in paper ) --> n_l
 learning_rate = 1e-4  # Reduced from 3e-4
 weight_decay = 0.01  # Added weight decay
 warmup_steps = 1000  # Number of warmup steps
-max_iters = 10000  # Total number of training iterations
-eval_iters = 500
-max_eval_iters = 5000
-max_tokens = 9000
+max_iters = 15000  # Total number of training iterations
+eval_iters = 500 #each eval_iter we evaluate the loss
 
 #Saving parameters
 path_save_model = "Models/"
@@ -35,7 +33,6 @@ path_save_model = "Models/"
 df = pd.read_parquet(path_data)
 
 #Assert if we have all strings bigger than block size to ensure our context takes everything
-#Note: Padding? Trimming?
 if df["input_token"].str.len().min() < block_size:
     raise OverflowError("Block size is too big and all the samples will not fit")
 
@@ -136,7 +133,7 @@ name = f"{encoding}_MI{max_iters}_lr{learning_rate}_wd{weight_decay}"
 path_dir = path_save_model + name
 os.mkdir(path_dir)
 #Save everything in the models file
-path = path_save_model + "/" + name + ".pt"
+path = path_dir + "/" + name + ".pt"
 torch.save(m, path)
 #store losses
 array = np.array([train_losses, test_losses])

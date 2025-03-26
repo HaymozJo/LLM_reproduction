@@ -52,7 +52,7 @@ class FeedForward(nn.Module):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(n_embd, n_embd *4), #as in the paper, multiplied by 4
-            nn.GELU(),  # Changed from ReLU to GELU as in BERT
+            nn.ReLU(), 
             nn.Dropout(dropout),
             nn.Linear(4*n_embd, n_embd),
             nn.Dropout(dropout)
@@ -145,6 +145,10 @@ class AIAYNModel(nn.Module):
         self.voc_size = voc_size #vocab_size
         self.block_size = block_size #T
         self.device = device
+        # Special tokens
+        self.BOS_TOKEN_ID = 100  # BERT's [CLS] token
+        self.EOS_TOKEN_ID = 102  # BERT's [SEP] token
+        self.PAD_TOKEN_ID = 0    # BERT's [PAD] token
 
     """
     Param:
@@ -197,59 +201,59 @@ class AIAYNModel(nn.Module):
     def forward(self, src, tgt = None):
         B, _ = src.shape
         _, K_encod, V_encod = self._encoder_forward(src)
-        #Case we have the targets, we want to get the logits and the loss to evaluate the model
+        
         if tgt is not None:
             B, T_tgt = tgt.shape
             # Add BOS token to decoder input
-            BOS_TOKEN_ID = 100  # Same as in generate method
             decoder_input = torch.cat([
-                torch.full((B, 1), BOS_TOKEN_ID, dtype=tgt.dtype, device=tgt.device),
+                torch.full((B, 1), self.BOS_TOKEN_ID, dtype=tgt.dtype, device=tgt.device),
                 tgt[:, :-1]  # Remove last token for teacher forcing
             ], dim=1)
             
-            # Get logits for the sequence
             logits = self._decoder_forward(decoder_input, K_encod, V_encod)
+            logits = logits[:, :-1, :].reshape(-1, self.voc_size)
+            targets = tgt[:, 1:].reshape(-1).long()
             
-            # Reshape for loss calculation
-            # We want to predict the next token at each position
-            # So we remove the last position from logits and first position from targets
-            logits = logits[:, :-1, :].reshape(-1, self.voc_size)  # (B*(T-1), vocab_size)
-            targets = tgt[:, 1:].reshape(-1).long()  # Convert to Long type for cross-entropy
-            
-            # Validate shapes
             if logits.size(0) != targets.size(0):
                 raise ValueError(f"Shape mismatch: logits {logits.shape}, targets {targets.shape}")
             
-            # Calculate loss
             loss = F.cross_entropy(logits, targets)
-        
-        #Case we do not have the targets, we want to generate the code
         else:
             logits = self.generate(src, K_encod, V_encod)
             loss = None
 
         return logits, loss
     
-    def generate(self, src, K_encod = None, V_encod = None, max_token = 100):
-        #If no K or V, generate new ones (Normally won't happen)
+    def generate(self, src, K_encod = None, V_encod = None, max_token = 100, temperature = 0.7, top_k = 50):
         if K_encod is None or V_encod is None:
             _, K_encod, V_encod = self._encoder_forward(src)
 
         B = src.size(0)
-        # Bert BOS = 100, XLNET = 1
-        BOS_TOKEN_ID = 100  # Replace with your actual BOS token ID
+        generated = torch.full((B, 1), self.BOS_TOKEN_ID, dtype=torch.long, device=self.device)
         
-        #Start with BOS
-        generated = torch.ones((B, 1), dtype=torch.long, device=self.device) * BOS_TOKEN_ID
-
-        for _ in range(max_token -1):
+        # Track if each sequence has generated an EOS token
+        finished = torch.zeros(B, dtype=torch.bool, device=self.device)
+        
+        for _ in range(max_token - 1):
+            # If all sequences are finished, break
+            if finished.all():
+                break
+                
             logits = self._decoder_forward(generated, K_encod, V_encod)
-            logits = logits[:, -1, :]
-            # apply softmax to get probabilities
-            probs = F.softmax(logits, dim=-1) # (B, voc_size)
-            # sample from the distribution
-            idx_next = torch.multinomial(probs, num_samples=1) # (B, 1)
-            # append sampled index to the running sequence
-            generated = torch.cat((generated, idx_next), dim=1) # (B, T+1)
+            logits = logits[:, -1, :] / temperature  # Apply temperature
+            
+            # Apply top-k sampling
+            top_k_logits, top_k_indices = torch.topk(logits, k=min(top_k, logits.size(-1)), dim=-1)
+            probs = F.softmax(top_k_logits, dim=-1)
+            
+            # Sample from the filtered distribution
+            idx_next = torch.multinomial(probs, num_samples=1)
+            idx_next = torch.gather(top_k_indices, 1, idx_next)
+            
+            # Append sampled index to the running sequence
+            generated = torch.cat((generated, idx_next), dim=1)
+            
+            # Check for EOS tokens
+            finished = finished | (idx_next.squeeze() == self.EOS_TOKEN_ID)
         
         return generated
