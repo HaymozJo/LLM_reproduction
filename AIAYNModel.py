@@ -4,46 +4,45 @@ import torch
 
 
 class Head(nn.Module):
-    def __init__(self, mask, head_size, block_size, n_embd, device, cross = False):
+    def __init__(self, mask, head_size, block_size, n_embd, device, cross=False, pad_token_id=0):
         super().__init__()
-        self.Query = nn.Linear(n_embd, head_size) #We get the linear projections to the head_size
-
+        self.Query = nn.Linear(n_embd, head_size)
         self.Key = nn.Linear(n_embd, head_size)
         self.Value = nn.Linear(n_embd, head_size)
-
-        self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size, device = device))) # (T, T)
-
+        self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size, device=device)))
         self.mask = mask
         self.cross = cross
-
         self.head_size = head_size
-    
+        self.PAD_TOKEN_ID = pad_token_id
 
-    """
-    param:
-        * idx : (B, T, C)
-        * K_encod: (B, T, d)
-        * V_encod: (B, T, d)
-    
-    """
-    def forward(self, idx, K_encod = None, V_encod = None):
-        _, T, _ = idx.shape
-        Q = self.Query(idx) #All (B, T, d)
+    def forward(self, idx, K_encod=None, V_encod=None):
+        B, T, _ = idx.shape
+        Q = self.Query(idx)  # (B, T, head_size)
         if self.cross:
-            K = self.Key(K_encod) #Tensors from the final layer of encoder, projected into the correct value
+            K = self.Key(K_encod)
             V = self.Value(V_encod)
         else:
             K = self.Key(idx)
             V = self.Value(idx)
 
-        wei = Q@K.transpose(-2,-1) #(B, T, d) @ (B, d, T) ---> (B, T, T)
+        # Calculate attention scores
+        wei = Q @ K.transpose(-2, -1)  # (B, T, T)
+        wei = wei * (self.head_size ** -0.5)  # Scale
 
-        wei = wei* (self.head_size **-0.5)
-        #If we are in a decoder head
+        # Create padding mask based on input tokens before embedding
+        if not self.cross:  # Only for self-attention
+            # Create mask for padding tokens (B, T)
+            padding_mask = (idx[:, :, 0] != self.PAD_TOKEN_ID)  # Use first embedding dimension
+            # Expand mask to attention matrix shape (B, T, T)
+            padding_mask = padding_mask.unsqueeze(1) & padding_mask.unsqueeze(2)
+            wei = wei.masked_fill(~padding_mask, float('-inf'))
+
+        # Apply causal mask if needed
         if self.mask:
-            wei.masked_fill(self.tril[:T, :T] == 0, float('-inf'))
-        
-        out = wei @ V #(B, T, T) @ (B, T, d) --> (B, T, d)
+            wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf'))
+
+        wei = F.softmax(wei, dim=-1)
+        out = wei @ V
         return out, K, V
 
 
@@ -69,7 +68,10 @@ class EncodeBlock(nn.Module):
         super().__init__()
         head_size = n_embd//num_heads
         #Our list of heads 
-        self.multiHeads = nn.ModuleList(Head(False, head_size, block_size, n_embd, device=device) for _ in range(num_heads))
+        self.multiHeads = nn.ModuleList([
+            Head(False, head_size, block_size, n_embd, device=device, pad_token_id=0)
+            for _ in range(num_heads)
+        ])
         self.proj = nn.Linear(n_embd, n_embd)
         self.dropout = nn.Dropout(dropout)
         self.ffwd = FeedForward(n_embd, dropout)
@@ -97,9 +99,15 @@ class DecodeBlock(nn.Module):
         head_size = n_embd//num_heads
         #Our list of heads 
         #first one with masking
-        self.multiHeadsMasked = nn.ModuleList(Head(True, head_size, block_size, n_embd, device=device) for _ in range(num_heads))
+        self.multiHeadsMasked = nn.ModuleList([
+            Head(True, head_size, block_size, n_embd, device=device, pad_token_id=0)
+            for _ in range(num_heads)
+        ])
         #Second one with the input of K,V
-        self.multiHeadsCross =  nn.ModuleList(Head(False, head_size, block_size, n_embd, cross=True, device=device) for _ in range(num_heads)) 
+        self.multiHeadsCross =  nn.ModuleList([
+            Head(False, head_size, block_size, n_embd, device=device, cross=True, pad_token_id=0)
+            for _ in range(num_heads)
+        ]) 
         #The projections, one and two after multiheads, las proj (last_proj) at the end
         self.proj1 = nn.Linear(n_embd, n_embd)
         self.proj2 = nn.Linear(n_embd, n_embd)
@@ -214,10 +222,15 @@ class AIAYNModel(nn.Module):
             logits = logits[:, :-1, :].reshape(-1, self.voc_size)
             targets = tgt[:, 1:].reshape(-1).long()
             
-            if logits.size(0) != targets.size(0):
-                raise ValueError(f"Shape mismatch: logits {logits.shape}, targets {targets.shape}")
+            # Create padding mask
+            padding_mask = (targets != self.PAD_TOKEN_ID)
             
-            loss = F.cross_entropy(logits, targets)
+            # Calculate loss only on non-padding tokens
+            loss = F.cross_entropy(
+                logits[padding_mask], 
+                targets[padding_mask],
+                ignore_index=self.PAD_TOKEN_ID
+            )
         else:
             logits = self.generate(src, K_encod, V_encod)
             loss = None
@@ -231,16 +244,20 @@ class AIAYNModel(nn.Module):
         B = src.size(0)
         generated = torch.full((B, 1), self.BOS_TOKEN_ID, dtype=torch.long, device=self.device)
         
-        # Track if each sequence has generated an EOS token
+        # Track if each sequence has generated an EOS token or PAD token
         finished = torch.zeros(B, dtype=torch.bool, device=self.device)
         
         for _ in range(max_token - 1):
             # If all sequences are finished, break
             if finished.all():
                 break
-                
+            
             logits = self._decoder_forward(generated, K_encod, V_encod)
-            logits = logits[:, -1, :] / temperature  # Apply temperature
+            logits = logits[:, -1, :] / temperature
+            
+            # Penalize PAD tokens unless the sequence is too long
+            if generated.size(1) < self.block_size // 2:
+                logits[:, self.PAD_TOKEN_ID] = float('-inf')
             
             # Apply top-k sampling
             top_k_logits, top_k_indices = torch.topk(logits, k=min(top_k, logits.size(-1)), dim=-1)
@@ -253,7 +270,7 @@ class AIAYNModel(nn.Module):
             # Append sampled index to the running sequence
             generated = torch.cat((generated, idx_next), dim=1)
             
-            # Check for EOS tokens
-            finished = finished | (idx_next.squeeze() == self.EOS_TOKEN_ID)
+            # Check for EOS or PAD tokens
+            finished = finished | (idx_next.squeeze() == self.EOS_TOKEN_ID) | (idx_next.squeeze() == self.PAD_TOKEN_ID)
         
         return generated

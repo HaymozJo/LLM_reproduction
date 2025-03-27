@@ -9,7 +9,7 @@ import numpy as np
 from Helpers import Encoding
 
 # Load the trained model
-model_path = "Models/Bert_MI10000_lr0.0001_wd0.01/Bert_MI10000_lr0.0001_wd0.01.pt"
+model_path = "Models/Bert_MI30000_lr0.0001_wd0.01/Bert_MI30000_lr0.0001_wd0.01.pt"
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f"Using device: {device}")
 
@@ -44,6 +44,8 @@ def process_output(generated_tokens):
         tokens = tokens[:tokens.index(model.EOS_TOKEN_ID)]
     if model.BOS_TOKEN_ID in tokens:
         tokens = tokens[tokens.index(model.BOS_TOKEN_ID)+1:]
+    # Remove PAD tokens
+    tokens = [t for t in tokens if t != model.PAD_TOKEN_ID]
     return tokens
 
 # Example usage
@@ -73,7 +75,7 @@ if __name__ == "__main__":
     temperatures = [0.5, 0.7, 1.0]
     print("\nGenerations with different temperatures:")
     for temp in temperatures:
-        generated = model.generate(input_ids, max_token=32, temperature=temp, top_k=50)
+        generated = model.generate(input_ids, max_token=32, temperature=temp, top_k=10)
         processed_tokens = process_output(generated[0])
         generated_text = decode(processed_tokens)
         print(f"Temperature {temp}: {generated_text}")
