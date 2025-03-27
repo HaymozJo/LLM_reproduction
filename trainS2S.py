@@ -21,8 +21,8 @@ n_head = 6 #numbers of heads processed in parallel in a multihead block --> n_he
 n_layer = 6 # number of repeated block one after the other (6 in paper ) --> n_layer
 
 #Training parameters
-learning_rate = 1e-4  # Reduced from 3e-4
-weight_decay = 0.01  # Added weight decay
+learning_rate = 1e-4 
+weight_decay = 0.01  # weight decay
 warmup_steps = 1000  # Number of warmup steps
 max_iters = 50000  # Total number of training iterations
 eval_iters = 500 #each eval_iter we evaluate the loss

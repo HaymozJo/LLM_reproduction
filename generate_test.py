@@ -9,7 +9,7 @@ import numpy as np
 from Helpers import Encoding
 
 # Load the trained model
-model_path = "Models/Bert_MI30000_lr0.0001_wd0.01/Bert_MI30000_lr0.0001_wd0.01.pt"
+model_path = "Models/Bert_MI50000_lr0.0001_wd0.01/Bert_MI50000_lr0.0001_wd0.01.pt"
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f"Using device: {device}")
 
