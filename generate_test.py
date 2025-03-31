@@ -60,7 +60,7 @@ if __name__ == "__main__":
     generated = model.generate(
         input_ids, 
         max_token=32,
-        temperature=0.7,  # Controls randomness (lower = more deterministic)
+        temperature=0.85,  # Controls randomness (lower = more deterministic)
         top_k=50  # Only consider top 50 tokens at each step
     )
     
