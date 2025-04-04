@@ -14,3 +14,5 @@ translated = model.generate(**tokenizer(src_text, return_tensors="pt", padding=T
 
 for t in translated:
     print( tokenizer.decode(t, skip_special_tokens=True) )
+
+    #Test to see the overall error
